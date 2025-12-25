@@ -1,51 +1,110 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
+using System.Collections;
 
 public class PlayerController : MonoBehaviour
 {
     public float speed = 3;
+    public Material flashMaterial;
+    public Material DefaultMaterial;
 
-    Vector3 move;
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
+    [Header("Attack Settings")]
+    public float shootDelay = 0.5f; 
+    private float shootTimer = 0f;
+    
+    private static readonly int AnimMove = Animator.StringToHash("Move");
+    private static readonly int AnimStop = Animator.StringToHash("Stop");
+    private static readonly int AnimDie = Animator.StringToHash("Die");
+
+    private Vector3 move;
+    private Animator m_animator;
+    private SpriteRenderer m_spriteRenderer;
+    private Charater m_character;
+    private ObjectPool m_bulletPool;
+
+    void Awake()
+    {
+        m_animator = GetComponent<Animator>();
+        m_spriteRenderer = GetComponent<SpriteRenderer>();
+        m_character = GetComponent<Charater>();
+        m_bulletPool = GetComponent<ObjectPool>();
+    }
+
     void Start()
     {
-        
+        // 게임 시작할 때 내 체력을 MaxHP만큼 채워라!
+        if (m_character != null)
+        {
+            m_character.Initialize();
+        }
     }
-
-    // Update is called once per frame
+    
     void Update()
     {
-        move = Vector3.zero;
-        if(Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.A))
+        float x = Input.GetAxisRaw("Horizontal");
+        float y = Input.GetAxisRaw("Vertical");
+        move = new Vector3(x, y, 0).normalized;
+
+        if (move.magnitude > 0)
         {
-            move += new Vector3(-1, 0, 0);
+            m_spriteRenderer.flipX = move.x < 0;
+            m_animator.SetTrigger(AnimMove);
         }
-        if(Input.GetKey(KeyCode.RightArrow) || Input.GetKey(KeyCode.D))
+        else 
         {
-            move += new Vector3(1, 0, 0);
-        }
-        if(Input.GetKey(KeyCode.UpArrow) || Input.GetKey(KeyCode.W))
-        {
-            move += new Vector3(0, 1, 0);
-        }
-        if(Input.GetKey(KeyCode.DownArrow) || Input.GetKey(KeyCode.S))
-        {
-            move += new Vector3(0, -1, 0);
+            m_animator.SetTrigger(AnimStop); 
         }
 
-        move = move.normalized;
-        if (move.x < 0)
+        shootTimer += Time.deltaTime; 
+        if (shootTimer >= shootDelay)
         {
-            GetComponent<SpriteRenderer>().flipX = true;
-        }
-
-        if (move.x > 0)
-        {
-            GetComponent<SpriteRenderer>().flipX = false;
+            Shoot();
+            shootTimer = 0f;
         }
     }
 
-    private void FixedUpdate()
+    
+    
+    void Shoot()
     {
-        transform.Translate(move * speed * Time.fixedDeltaTime);
+        Vector3 mousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+        mousePos.z = 0;
+        Vector3 shootDir = mousePos - (transform.position + new Vector3(0, -0.5f));
+
+        GameObject bullet = m_bulletPool.Get();
+        if (bullet != null)
+        {
+            bullet.transform.position = transform.position + new Vector3(0, -0.5f);
+            bullet.GetComponent<Bullet>().Direction = shootDir;
+        }
+    }
+
+    private void FixedUpdate() => transform.Translate(move * (speed * Time.fixedDeltaTime));
+
+    private void OnCollisionEnter2D(Collision2D collision)
+    {
+        if (collision.gameObject.CompareTag("Enemy"))
+        {
+            if (m_character.Hit(1)) Flash();
+            else Die();
+        }
+    }
+
+    void Flash() => StartCoroutine(FlashRoutine());
+
+    IEnumerator FlashRoutine()
+    {
+        m_spriteRenderer.material = flashMaterial;
+        yield return new WaitForSeconds(0.2f);
+        m_spriteRenderer.material = DefaultMaterial;
+    }
+
+    void Die() => StartCoroutine(DieRoutine());
+
+    IEnumerator DieRoutine()
+    {
+        m_animator.SetTrigger(AnimDie);
+        yield return new WaitForSeconds(0.875f);
+        SceneManager.LoadScene("GameOverScene");
     }
 }
